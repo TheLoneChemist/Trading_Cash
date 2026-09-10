@@ -14,6 +14,7 @@ never touches Tradier and isn't gated by market hours — it's not time-sensitiv
 data, just a review of what already happened.
 """
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -21,6 +22,10 @@ import requests
 from . import config, storage
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+
+REVISIONS_LOG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "REVISIONS.md"
+)
 
 # Kept here (not read from the actual source files) so this module doesn't need
 # filesystem access to describe the repo to Claude. Update this by hand if you rename
@@ -39,6 +44,9 @@ REPO_MAP = """\
 - src/storage.py — JSON-file persistence: account state, trade log, suggestion history,
   watchlist, weekly reviews.
 - src/weekly_review.py — this module.
+- docs/REVISIONS.md — git-tracked changelog of past strategy/code changes, kept
+  current by whichever session makes a change. NOT runtime-written by this app —
+  only read, for context on what's already been tried.
 - app.py — Flask routes and the dashboard/history/watchlist/review pages.
 - templates/*.html, static/style.css — the UI, including the order-ticket instructions that
   tell the user exactly what to click in Webull (this has been a recurring source of
@@ -58,6 +66,13 @@ Repo map (for your reference — you do not have the actual source in this call,
 the structured summary given to you in the user message):
 {REPO_MAP}
 
+You will also be given the current contents of docs/REVISIONS.md, a git-tracked \
+changelog of past changes to this tool. Read it before analyzing anything: do not \
+recommend a change that's already been made (check dates and descriptions against what \
+you're seeing in this week's data — a recent revision may explain why a rule is now \
+behaving differently), and note in your analysis if this week's data suggests a past \
+change is or isn't working as intended.
+
 You will be given a JSON summary that has already been joined against the trade log — \
 do not re-derive matches yourself, trust the structure you're given, and reason from \
 its actual contents rather than typical/generic patterns.
@@ -69,7 +84,8 @@ A concise, specific critique grounded only in the data given: which checklist ru
 were chronically uninformative (e.g. always MANUAL_REVIEW) this week, which symbols \
 produced no candidates and why that's expected or not, and — most importantly — a \
 clear account of any gap between suggested and executed trades (`trades_NOT_matched_to_any_suggestion` \
-and `suggestions_not_acted_on` in the summary). If the data doesn't support a strong \
+and `suggestions_not_acted_on` in the summary). Cross-check against docs/REVISIONS.md \
+so you don't re-flag something already fixed. If the data doesn't support a strong \
 conclusion about something, say so plainly rather than speculating.
 
 ## Handoff prompt
@@ -84,6 +100,10 @@ code fix (e.g. "the user keeps buying calls that aren't on the watchlist — ask
 whether to add that symbol, don't just add it").
 - Not instruct the new session to guess at anything you're not confident about from \
 this week's data — flag those as open questions for the user instead.
+- End with an explicit instruction to append a new dated entry to docs/REVISIONS.md \
+before finishing, in the format already used in that file (## YYYY-MM-DD — title, \
+**Source:**, **Changed:**, **Why:**), crediting this review by its date, so the NEXT \
+weekly review and the next new-chat handoff both have accurate history to work from.
 """
 
 
@@ -103,6 +123,18 @@ def _parse_iso(ts: str) -> datetime | None:
         return dt
     except ValueError:
         return None
+
+
+def read_revisions_log() -> str:
+    """
+    Reads docs/REVISIONS.md as-is. Returns a placeholder if it's missing (e.g. someone
+    deleted it) rather than failing the whole review over a missing doc file.
+    """
+    try:
+        with open(REVISIONS_LOG_PATH, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "(docs/REVISIONS.md not found — no revision history available yet.)"
 
 
 def build_weekly_summary(days: int = None) -> dict:
@@ -202,7 +234,11 @@ def run_weekly_review(days: int = None) -> dict:
 
     days = days or config.WEEKLY_REVIEW_LOOKBACK_DAYS
     summary = build_weekly_summary(days)
+    revisions_log = read_revisions_log()
     user_message = (
+        "Here is docs/REVISIONS.md — the changelog of past changes to this tool. "
+        "Read it before analyzing anything below, so you don't recommend something "
+        "already done:\n\n" + revisions_log + "\n\n---\n\n"
         "Here is this week's structured summary from the suggestion tool. It has "
         "already been joined against the trade log — trust this structure rather than "
         "re-deriving matches yourself:\n\n" + json.dumps(summary, indent=2, default=str)

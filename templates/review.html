@@ -19,6 +19,11 @@
       </div>
     {% endif %}
 
+    <details class="edit-details" style="display: block; margin-bottom: 1rem;">
+      <summary class="edit-summary">View revisions log (docs/REVISIONS.md)</summary>
+      <div class="review-text" style="margin-top: 0.6rem; max-height: 300px; overflow-y: auto; background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 0.8rem;">{{ revisions_log }}</div>
+    </details>
+
     <button class="submit" id="run-review-btn" type="button" {{ "disabled" if not has_api_key }}>
       Run review now
     </button>

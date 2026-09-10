@@ -26,7 +26,7 @@ from src import config, storage, sizing
 from src.daily_job import run_daily_job
 from src.formatting import format_expiration_webull
 from src.market_calendar import trading_days_until
-from src.weekly_review import run_weekly_review_safe
+from src.weekly_review import run_weekly_review_safe, read_revisions_log
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
@@ -251,6 +251,7 @@ def review_page():
         today_str=_today_str(),
         reviews=parsed,
         has_api_key=bool(config.ANTHROPIC_API_KEY),
+        revisions_log=read_revisions_log(),
     )
 
 
