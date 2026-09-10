@@ -120,6 +120,7 @@ def run_daily_job(force: bool = False) -> dict:
         "skip_day": len([c for c in all_candidates if c.overall_status == "CANDIDATE"]) == 0,
     }
     storage.save_suggestions(payload)
+    storage.append_suggestion_history(payload)  # feeds the weekly review — see weekly_review.py
     return payload
 
 

@@ -37,6 +37,21 @@ MARKET_TZ = "America/New_York"
 EARLIEST_RUN_HOUR = 9
 EARLIEST_RUN_MINUTE = 45
 
+# --- Weekly Claude-powered review -----------------------------------------------
+# Analyzes the past week's suggestions against what you actually logged, and produces
+# a ready-to-paste prompt for a NEW Claude chat (with this repo attached) to make the
+# resulting code changes. See src/weekly_review.py. This calls a real, billed
+# Anthropic API endpoint — unlike Tradier's free sandbox, each run has a real dollar
+# cost (small, but real), which is why it's weekly rather than daily and why the
+# manual trigger requires the same admin secret as /refresh.
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
+WEEKLY_REVIEW_LOOKBACK_DAYS = 7
+# Sunday evening ET, so it looks back over a full trading week before Monday's run.
+WEEKLY_REVIEW_DAY_OF_WEEK = "sun"
+WEEKLY_REVIEW_HOUR = 18
+WEEKLY_REVIEW_MINUTE = 0
+
 # --- Watchlist -----------------------------------------------------------------
 # NOTE: this is only the DEFAULT seed for a fresh deploy. The live, editable watchlist
 # lives in data/watchlist.json, managed from the Watchlist page.

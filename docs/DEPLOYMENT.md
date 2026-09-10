@@ -49,6 +49,13 @@ time (values, not the example placeholders):
 | `TRADIER_ENV` | `sandbox` |
 | `ADMIN_SECRET` | make up a long random string — treat it like a password |
 
+Optional, for the weekly automated review (see Part 9 below):
+
+| Variable | Value |
+|---|---|
+| `ANTHROPIC_API_KEY` | an API key from console.anthropic.com (a real, billed key — different from a claude.ai subscription) |
+| `ANTHROPIC_MODEL` | leave unset to use the default (`claude-sonnet-5`) |
+
 You do **not** need to set `PORT` — Railway injects it automatically.
 
 After saving, Railway auto-redeploys. Check the **Deployments** tab → open the latest
@@ -134,6 +141,33 @@ paperTrade, come back and log it in the "Log a trade you placed" form so your
 performance history stays accurate.
 
 ---
+
+## Part 9 — Weekly Claude-powered review (optional)
+
+Once `ANTHROPIC_API_KEY` is set (Part 4), the app runs a review every Sunday evening
+(6 PM ET) that:
+
+1. Pulls the past 7 days of suggestion history (`data/suggestion_history.json`,
+   written automatically by every daily run) and the trade log.
+2. Joins them in plain Python — which trades matched a suggestion, which didn't,
+   which suggestions were never acted on — before sending anything to Claude, so the
+   API call is spent on interpretation, not data-wrangling.
+3. Makes one call to the real Anthropic API (`api.anthropic.com`, not claude.ai) asking
+   for a critique of the strategy's own code and, specifically, an explanation of any
+   gap between what was suggested and what you actually executed.
+4. Saves the result to `data/weekly_reviews.json` and shows it on the **Review** tab,
+   ending with a ready-to-copy prompt for a **new** Claude chat.
+
+**This costs real money per run** — unlike Tradier's free sandbox, `api.anthropic.com`
+bills per token. At the summary sizes this produces (a few KB of JSON), a weekly run
+should cost a few cents, but it's not free, which is also why the manual trigger on the
+Review page asks for your `ADMIN_SECRET` before running.
+
+**Using the output:** when a review finishes, re-zip this repo (with whatever changes
+you've made since), start a brand-new Claude chat, attach the zip, and paste the
+"Handoff prompt" text from the Review page. That new session has no memory of this
+conversation — the prompt is written to give it everything it needs from the repo
+alone, including specific file/function names to look at.
 
 ## Known gaps for a future automation pass
 

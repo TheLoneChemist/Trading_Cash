@@ -342,6 +342,28 @@ tr.row-expiring { background: var(--fail-bg); }
   color: var(--ink-faint);
   font-family: 'IBM Plex Sans', sans-serif;
 }
+
+.review-text {
+  font-size: 0.86rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  color: var(--ink);
+}
+.handoff-textarea {
+  width: 100%;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  padding: 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+  resize: vertical;
+}
+#run-review-btn:disabled {
+  background: var(--line-strong);
+  cursor: not-allowed;
+}
 table.history th {
   text-align: left;
   font-size: 0.68rem;

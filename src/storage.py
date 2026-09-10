@@ -156,3 +156,40 @@ def update_watchlist_symbol_group(symbol: str, new_group: str) -> list[dict]:
             w["group"] = new_group
     _write("watchlist.json", watchlist)
     return watchlist
+
+
+# --- Suggestion history (for the weekly review) ----------------------------------
+# save_suggestions() above only ever holds the LATEST day's run, for the dashboard.
+# This keeps a rolling log of every run so the weekly review has something to look
+# back over. Capped to avoid the file growing forever on a personal deploy.
+SUGGESTION_HISTORY_MAX_ENTRIES = 60  # ~2 months of daily runs
+
+
+def append_suggestion_history(payload: dict) -> None:
+    history = _read("suggestion_history.json", [])
+    history.append(payload)
+    if len(history) > SUGGESTION_HISTORY_MAX_ENTRIES:
+        history = history[-SUGGESTION_HISTORY_MAX_ENTRIES:]
+    _write("suggestion_history.json", history)
+
+
+def get_suggestion_history() -> list[dict]:
+    return _read("suggestion_history.json", [])
+
+
+# --- Weekly Claude-powered reviews -------------------------------------------------
+WEEKLY_REVIEW_MAX_ENTRIES = 26  # ~6 months of weekly runs
+
+
+def add_weekly_review(review: dict) -> dict:
+    reviews = _read("weekly_reviews.json", [])
+    review["id"] = (max((r.get("id", 0) for r in reviews), default=0)) + 1
+    reviews.append(review)
+    if len(reviews) > WEEKLY_REVIEW_MAX_ENTRIES:
+        reviews = reviews[-WEEKLY_REVIEW_MAX_ENTRIES:]
+    _write("weekly_reviews.json", reviews)
+    return review
+
+
+def get_weekly_reviews() -> list[dict]:
+    return _read("weekly_reviews.json", [])

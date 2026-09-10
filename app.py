@@ -26,6 +26,7 @@ from src import config, storage, sizing
 from src.daily_job import run_daily_job
 from src.formatting import format_expiration_webull
 from src.market_calendar import trading_days_until
+from src.weekly_review import run_weekly_review_safe
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
@@ -218,6 +219,54 @@ def health():
     return jsonify({"status": "ok"})
 
 
+def _split_review_text(text: str) -> tuple[str, str]:
+    """Splits the model's response into (analysis, handoff_prompt) on the '## Handoff prompt' heading."""
+    if not text:
+        return "", ""
+    marker = "## Handoff prompt"
+    idx = text.find(marker)
+    if idx == -1:
+        return text.replace("## Analysis", "").strip(), ""
+    analysis = text[:idx].replace("## Analysis", "").strip()
+    handoff = text[idx + len(marker):].strip()
+    # Strip a leading fenced-code-block wrapper if the model included one, so the
+    # textarea holds just the prompt text, not literal ``` fences.
+    if handoff.startswith("```"):
+        handoff = handoff.split("\n", 1)[1] if "\n" in handoff else ""
+        if handoff.endswith("```"):
+            handoff = handoff[:-3]
+    return analysis, handoff.strip()
+
+
+@app.route("/review")
+def review_page():
+    reviews = list(reversed(storage.get_weekly_reviews()))
+    parsed = []
+    for r in reviews:
+        analysis, handoff = _split_review_text(r.get("analysis_and_prompt") or "")
+        parsed.append({**r, "analysis": analysis, "handoff_prompt": handoff})
+    return render_template(
+        "review.html",
+        active_page="review",
+        today_str=_today_str(),
+        reviews=parsed,
+        has_api_key=bool(config.ANTHROPIC_API_KEY),
+    )
+
+
+@app.route("/review/run", methods=["POST"])
+def review_run():
+    """
+    Manually triggers the weekly review. Requires X-Admin-Secret, same as /refresh —
+    arguably more important to protect here, since unlike Tradier's free sandbox, each
+    call to this route costs real money against your Anthropic API key.
+    """
+    if not config.ADMIN_SECRET or request.headers.get("X-Admin-Secret") != config.ADMIN_SECRET:
+        return jsonify({"error": "unauthorized"}), 401
+    result = run_weekly_review_safe()
+    return jsonify(result)
+
+
 # --- Scheduler ---------------------------------------------------------------------
 # Fires every weekday morning; run_daily_job() re-validates the market-day/9:45 gate
 # itself, so a slightly-early or misfired trigger is harmless — it'll just no-op and
@@ -230,9 +279,19 @@ def start_scheduler():
         id="daily_suggestion_job",
         replace_existing=True,
     )
+    scheduler.add_job(
+        run_weekly_review_safe,
+        trigger=CronTrigger(
+            day_of_week=config.WEEKLY_REVIEW_DAY_OF_WEEK,
+            hour=config.WEEKLY_REVIEW_HOUR,
+            minute=config.WEEKLY_REVIEW_MINUTE,
+        ),
+        id="weekly_review_job",
+        replace_existing=True,
+    )
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))
-    logger.info("Scheduler started: daily job set for 9:45 AM ET, Mon-Fri.")
+    logger.info("Scheduler started: daily job 9:45 AM ET Mon-Fri; weekly review Sun 6 PM ET.")
     return scheduler
 
 

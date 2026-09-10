@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block content %}
+
+  <section id="review">
+    <h2>Weekly review</h2>
+    <p class="section-hint">
+      Runs automatically every Sunday evening, comparing the week's suggestions
+      against what you actually logged as executed. Each entry below ends with a
+      ready-to-copy prompt — paste it into a <strong>new</strong> Claude chat along
+      with this repo (re-zip and attach it there), and that session can make the
+      code changes without needing this conversation's history.
+    </p>
+
+    {% if not has_api_key %}
+      <div class="errors-note">
+        ANTHROPIC_API_KEY isn't set, so this can't run yet. Get a key at
+        console.anthropic.com and add it to your .env file or Railway variables —
+        see docs/DEPLOYMENT.md.
+      </div>
+    {% endif %}
+
+    <button class="submit" id="run-review-btn" type="button" {{ "disabled" if not has_api_key }}>
+      Run review now
+    </button>
+    <span id="run-review-status" class="section-hint" style="margin-left: 0.6rem;"></span>
+
+    {% if not reviews %}
+      <p class="empty-note" style="margin-top: 1.5rem;">
+        No reviews yet — the first one runs automatically this Sunday evening, or
+        click "Run review now" above once you have a few days of suggestions and
+        logged trades to compare.
+      </p>
+    {% endif %}
+
+    {% for r in reviews %}
+    <div class="candidate" style="margin-top: 1.5rem;">
+      <div class="candidate-head">
+        <div class="candidate-title">
+          Week ending {{ r.generated_at[:10] }}
+          <span class="type">{{ r.period_days }}-day lookback · {{ r.model }}</span>
+        </div>
+      </div>
+
+      {% if r.error %}
+        <div class="errors-note">This run failed: {{ r.error }}</div>
+      {% else %}
+        {% if r.summary %}
+        <div class="metrics-row">
+          <div class="metric"><span class="label">days run</span><span class="value">{{ r.summary.days_run }}</span></div>
+          <div class="metric"><span class="label">days skipped</span><span class="value">{{ r.summary.days_skipped }}</span></div>
+          <div class="metric"><span class="label">candidates generated</span><span class="value">{{ r.summary.total_candidates_generated }}</span></div>
+          <div class="metric"><span class="label">trades logged</span><span class="value">{{ r.summary.trades_logged_this_period }}</span></div>
+        </div>
+        {% if r.summary.trades_NOT_matched_to_any_suggestion %}
+        <div class="warnings-note">
+          {{ r.summary.trades_NOT_matched_to_any_suggestion | length }} logged trade(s) this week didn't match any suggestion — see the analysis below for what that might mean.
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <h3 class="subhead" style="margin-top: 1rem;">Analysis</h3>
+        <div class="review-text">{{ r.analysis }}</div>
+
+        {% if r.handoff_prompt %}
+        <h3 class="subhead" style="margin-top: 1rem;">Handoff prompt for a new Claude chat</h3>
+        <textarea class="handoff-textarea" readonly rows="10" id="handoff-{{ r.id }}">{{ r.handoff_prompt }}</textarea>
+        <button class="submit copy-btn" type="button" data-target="handoff-{{ r.id }}" style="margin-top: 0.5rem;">Copy prompt</button>
+        {% endif %}
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+
+  <script>
+    document.querySelectorAll('.copy-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var ta = document.getElementById(btn.dataset.target);
+        ta.select();
+        navigator.clipboard.writeText(ta.value).then(function () {
+          var original = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(function () { btn.textContent = original; }, 1500);
+        });
+      });
+    });
+
+    document.getElementById('run-review-btn').addEventListener('click', function () {
+      var secret = window.prompt('Admin secret (ADMIN_SECRET):');
+      if (!secret) return;
+      var statusEl = document.getElementById('run-review-status');
+      statusEl.textContent = 'Running — this calls the Anthropic API, may take up to a minute...';
+      fetch('{{ url_for("review_run") }}', {
+        method: 'POST',
+        headers: { 'X-Admin-Secret': secret }
+      }).then(function (r) {
+        if (r.status === 401) {
+          statusEl.textContent = 'Wrong secret.';
+          return;
+        }
+        return r.json().then(function () {
+          statusEl.textContent = 'Done — reloading...';
+          window.location.reload();
+        });
+      }).catch(function () {
+        statusEl.textContent = 'Request failed — check the server logs.';
+      });
+    });
+  </script>
+
+{% endblock %}

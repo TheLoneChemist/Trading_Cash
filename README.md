@@ -74,13 +74,15 @@ trading-dashboard/
 │   ├── models.py                # dataclasses used across the pipeline
 │   ├── strategy.py             # the entry checklist (rules 1–6 from the handoff)
 │   ├── sizing.py                # position sizing + exit-level math (Section 7)
-│   ├── storage.py               # JSON-file persistence for account/trades/suggestions
-│   └── daily_job.py             # orchestrates: gate check → fetch → strategy → save
+│   ├── storage.py               # JSON-file persistence for account/trades/suggestions/reviews
+│   ├── daily_job.py             # orchestrates: gate check → fetch → strategy → save
+│   └── weekly_review.py         # weekly Claude API call: analyzes suggestions vs. executed trades
 ├── templates/
-│   ├── base.html                # shared header/nav all three pages extend
+│   ├── base.html                # shared header/nav all pages extend
 │   ├── dashboard.html           # page 1: account & sizing, today's suggestions, log a trade
 │   ├── history.html             # page 2: performance history table
-│   └── watchlist.html           # page 3: add/remove watchlist symbols
+│   ├── watchlist.html           # page 3: add/remove/edit watchlist symbols
+│   └── review.html              # page 4: weekly Claude-generated reviews + handoff prompts
 ├── static/style.css
 ├── data/                        # runtime JSON "database" — see DEPLOYMENT.md re: volumes
 │   ├── account_state.json
