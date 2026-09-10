@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trade Desk{% if page_title %} — {{ page_title }}{% endif %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>Trade Desk</h1>
+    <span class="date">{{ today_str }}</span>
+  </header>
+
+  <nav class="tabs">
+    <a href="{{ url_for('dashboard') }}" class="tab {{ 'active' if active_page == 'dashboard' }}">Dashboard</a>
+    <a href="{{ url_for('history') }}" class="tab {{ 'active' if active_page == 'history' }}">History</a>
+    <a href="{{ url_for('watchlist_page') }}" class="tab {{ 'active' if active_page == 'watchlist' }}">Watchlist</a>
+  </nav>
+
+  {% block content %}{% endblock %}
+
+  <footer class="disclaimer">
+    Suggestion-only tool. Nothing on this page places, modifies, or cancels a broker
+    order — every trade here was entered by you after you placed it manually. This is
+    not financial advice; several of the rules behind these suggestions (IV Rank,
+    exit rules, cross-asset diversification) are unverified conventions, not backtested
+    edges — see <code>docs/strategy-handoff.md</code> for the full confidence tagging.
+    Paper-trade before risking real capital.
+  </footer>
+
+</div>
+</body>
+</html>

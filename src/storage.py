@@ -1,0 +1,158 @@
+"""
+Simple JSON-file "database." No SQL, no ORM — deliberately, so a non-professional
+developer can open any data/*.json file in a text editor and understand or fix it by
+hand. Fine for one person's trade log; if you outgrow it, swap for SQLite without
+changing the rest of the app (only these functions would need to change).
+
+IMPORTANT (Railway): the container filesystem is ephemeral by default. Without a
+Railway Volume mounted at the data/ path, every deploy wipes these files. See
+docs/DEPLOYMENT.md.
+"""
+import json
+import os
+import threading
+from datetime import datetime, timezone
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+_lock = threading.Lock()
+
+
+def _path(filename: str) -> str:
+    return os.path.join(DATA_DIR, filename)
+
+
+def _read(filename: str, default):
+    path = _path(filename)
+    if not os.path.exists(path):
+        return default
+    with open(path, "r") as f:
+        content = f.read().strip()
+        if not content:
+            return default
+        return json.loads(content)
+
+
+def _write(filename: str, data) -> None:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    path = _path(filename)
+    with _lock:
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, indent=2, default=str)
+        os.replace(tmp_path, path)  # atomic on POSIX
+
+
+# --- Account state ---------------------------------------------------------------
+def get_account_state() -> dict:
+    return _read("account_state.json", {"account_value": None, "buying_power": None, "updated_at": None})
+
+
+def set_account_state(account_value: float, buying_power: float) -> dict:
+    state = {
+        "account_value": account_value,
+        "buying_power": buying_power,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _write("account_state.json", state)
+    return state
+
+
+# --- Trade log ---------------------------------------------------------------------
+def get_trade_log() -> list[dict]:
+    return _read("trade_log.json", [])
+
+
+def add_trade(trade: dict) -> dict:
+    trades = get_trade_log()
+    trade["id"] = (max((t.get("id", 0) for t in trades), default=0)) + 1
+    trade["logged_at"] = datetime.now(timezone.utc).isoformat()
+    trade.setdefault("status", "open")
+    trades.append(trade)
+    _write("trade_log.json", trades)
+    return trade
+
+
+def update_trade_status(trade_id: int, status: str, closed_credit_debit: float = None) -> bool:
+    trades = get_trade_log()
+    for t in trades:
+        if t.get("id") == trade_id:
+            t["status"] = status
+            if closed_credit_debit is not None:
+                t["closed_price"] = closed_credit_debit
+            t["closed_at"] = datetime.now(timezone.utc).isoformat() if status != "open" else None
+            _write("trade_log.json", trades)
+            return True
+    return False
+
+
+def update_trade_current_value(trade_id: int, current_value: float, fetched_at: str) -> bool:
+    """Called once a day by the daily job's batched refresh, not by any page load."""
+    trades = get_trade_log()
+    for t in trades:
+        if t.get("id") == trade_id:
+            t["current_value"] = current_value
+            t["current_value_fetched_at"] = fetched_at
+            _write("trade_log.json", trades)
+            return True
+    return False
+
+
+def get_open_positions() -> list[dict]:
+    return [t for t in get_trade_log() if t.get("status") == "open"]
+
+
+# --- Daily suggestions --------------------------------------------------------------
+def get_suggestions() -> dict:
+    return _read("suggestions.json", {"generated_at": None, "gate_reason": None, "candidates": []})
+
+
+def save_suggestions(payload: dict) -> None:
+    _write("suggestions.json", payload)
+
+
+# --- Event blackout dates (user-maintained) ------------------------------------------
+def get_blackout_dates() -> list[dict]:
+    return _read("event_blackout_dates.json", [])
+
+
+# --- Watchlist (user-editable via the Watchlist page) ---------------------------------
+def get_watchlist() -> list[dict]:
+    """
+    Returns the live, user-editable watchlist. Seeded from config.WATCHLIST the first
+    time this is called if data/watchlist.json doesn't exist yet, so a fresh clone of
+    the repo starts with the same five symbols from the strategy handoff.
+    """
+    from . import config  # local import avoids a circular import at module load time
+
+    default = [dict(entry) for entry in config.WATCHLIST]
+    watchlist = _read("watchlist.json", None)
+    if watchlist is None:
+        _write("watchlist.json", default)
+        return default
+    return watchlist
+
+
+def add_watchlist_symbol(symbol: str, group: str) -> list[dict]:
+    watchlist = get_watchlist()
+    symbol = symbol.upper().strip()
+    if any(w["symbol"] == symbol for w in watchlist):
+        return watchlist  # already present — no duplicates
+    watchlist.append({"symbol": symbol, "group": group})
+    _write("watchlist.json", watchlist)
+    return watchlist
+
+
+def remove_watchlist_symbol(symbol: str) -> list[dict]:
+    watchlist = [w for w in get_watchlist() if w["symbol"] != symbol.upper().strip()]
+    _write("watchlist.json", watchlist)
+    return watchlist
+
+
+def update_watchlist_symbol_group(symbol: str, new_group: str) -> list[dict]:
+    symbol = symbol.upper().strip()
+    watchlist = get_watchlist()
+    for w in watchlist:
+        if w["symbol"] == symbol:
+            w["group"] = new_group
+    _write("watchlist.json", watchlist)
+    return watchlist

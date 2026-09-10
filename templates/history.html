@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+
+  <section id="history">
+    <h2>Performance history</h2>
+
+    <h3 class="subhead">Open positions</h3>
+    <p class="section-hint">Current value refreshes once a day, batched into the 9:45 AM ET run — not on every page load.</p>
+    {% if open_trades %}
+    <table class="history">
+      <thead>
+        <tr>
+          <th>Symbol</th><th>Type</th><th>Strike</th><th>Exp</th>
+          <th>Cost/contract</th><th>Suggested exit</th><th>Current value</th><th>Contracts</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in open_trades %}
+        <tr class="{{ 'row-expiring' if t.expiring_soon }}">
+          <td>{{ t.symbol }}</td>
+          <td>{{ "Put" if t.option_type == "put" else "Call" }}</td>
+          <td>${{ t.strike }}</td>
+          <td>
+            {{ t.expiration | webull_exp }}
+            {% if t.expiring_soon %}
+              <span class="pill pill-expiring">
+                {% if t.dte_trading < 0 %}past expiration{% elif t.dte_trading == 0 %}expires today{% else %}{{ t.dte_trading }} trading day{{ "s" if t.dte_trading != 1 }} left{% endif %}
+              </span>
+            {% endif %}
+          </td>
+          <td>${{ "%.2f"|format(t.premium_paid) }}</td>
+          <td>
+            {% if t.profit_target_low is defined %}
+              target ${{ "%.2f"|format(t.profit_target_low) }}–${{ "%.2f"|format(t.profit_target_high) }} · stop ${{ "%.2f"|format(t.stop_loss_low) }}–${{ "%.2f"|format(t.stop_loss_high) }}
+            {% else %}
+              <span class="empty-note">not available</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if t.current_value is defined and t.current_value is not none %}
+              ${{ "%.2f"|format(t.current_value) }}
+              <span class="fetched-at">as of {{ t.current_value_fetched_at }}</span>
+            {% else %}
+              <span class="empty-note">not fetched yet</span>
+            {% endif %}
+          </td>
+          <td>{{ t.contracts }}</td>
+          <td>
+            <form method="post" action="{{ url_for('close_trade') }}" style="display:flex; gap:4px;">
+              <input type="hidden" name="trade_id" value="{{ t.id }}">
+              <select name="status" style="font-size:0.7rem;">
+                <option value="closed_profit">Closed — profit</option>
+                <option value="closed_loss">Closed — loss</option>
+              </select>
+              <input type="number" step="0.01" name="closed_price" placeholder="close $" style="width:70px; font-size:0.7rem;">
+              <button class="submit" type="submit" style="padding:0.2rem 0.5rem; font-size:0.7rem;">Save</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="empty-note">No open positions. Log a trade from the Dashboard page after you place it.</p>
+    {% endif %}
+
+    <h3 class="subhead">Closed positions</h3>
+    {% if closed_trades %}
+    <table class="history">
+      <thead>
+        <tr>
+          <th>Symbol</th><th>Type</th><th>Strike</th><th>Exp</th>
+          <th>Cost/contract</th><th>Contracts</th><th>Result</th><th>Closed at</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in closed_trades %}
+        <tr>
+          <td>{{ t.symbol }}</td>
+          <td>{{ "Put" if t.option_type == "put" else "Call" }}</td>
+          <td>${{ t.strike }}</td>
+          <td>{{ t.expiration | webull_exp }}</td>
+          <td>${{ "%.2f"|format(t.premium_paid) }}</td>
+          <td>{{ t.contracts }}</td>
+          <td><span class="pill pill-{{ t.status }}">{{ t.status.replace("_"," ") }}{% if t.get('closed_price') is not none %} · ${{ "%.2f"|format(t.closed_price) }}{% endif %}</span></td>
+          <td>{{ t.closed_at[:10] if t.closed_at else "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="empty-note">No closed trades yet.</p>
+    {% endif %}
+  </section>
+
+{% endblock %}

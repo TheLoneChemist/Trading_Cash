@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+
+  <section id="watchlist">
+    <h2>Watchlist</h2>
+    <p class="section-hint">
+      Symbols the daily job scans. Group matters: symbols sharing a group are treated
+      as correlated by the portfolio-fit check (rule 5) — see
+      <code>docs/strategy-handoff.md</code> Section 4 for why the default five are
+      grouped the way they are.
+    </p>
+
+    <table class="history" style="margin-bottom: 1.5rem;">
+      <thead>
+        <tr><th>Symbol</th><th>Group</th><th></th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for w in watchlist %}
+        <tr>
+          <td>{{ w.symbol }}</td>
+          <td>{{ group_labels.get(w.group, w.group) }}</td>
+          <td>
+            <details class="edit-details">
+              <summary class="edit-summary">Edit</summary>
+              <form method="post" action="{{ url_for('update_watchlist') }}" class="inline-edit-form">
+                <input type="hidden" name="symbol" value="{{ w.symbol }}">
+                <select name="group">
+                  {% for g in group_choices %}
+                  <option value="{{ g.value }}" {{ "selected" if g.value == w.group }}>{{ g.label }}</option>
+                  {% endfor %}
+                </select>
+                <button class="submit" type="submit">Save</button>
+              </form>
+            </details>
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('remove_watchlist') }}" style="margin:0;">
+              <input type="hidden" name="symbol" value="{{ w.symbol }}">
+              <button class="submit" type="submit" style="padding:0.2rem 0.6rem; font-size:0.72rem;">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not watchlist %}
+        <tr><td colspan="4" class="empty-note">Watchlist is empty — the daily job will find nothing to scan until you add a symbol.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <form class="panel" method="post" action="{{ url_for('add_watchlist') }}">
+      <div class="field-row">
+        <div class="field">
+          <label for="symbol">Symbol</label>
+          <input type="text" name="symbol" id="symbol" placeholder="QQQ" required>
+        </div>
+        <div class="field">
+          <label for="group">Group</label>
+          <select name="group" id="group" required>
+            {% for g in group_choices %}
+            <option value="{{ g.value }}">{{ g.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button class="submit" type="submit">Add to watchlist</button>
+    </form>
+  </section>
+
+{% endblock %}

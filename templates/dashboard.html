@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block content %}
+
+  <section id="account">
+    <h2>Account &amp; sizing</h2>
+    <p class="section-hint">Set this first — every suggestion below sizes itself against this number.</p>
+    <form class="panel" method="post" action="{{ url_for('update_account') }}">
+      <p class="account-summary">
+        {% if account.account_value %}
+          Current: ${{ "{:,.2f}".format(account.account_value) }} account ·
+          ${{ "{:,.2f}".format(account.buying_power) }} buying power ·
+          updated {{ account.updated_at }}
+        {% else %}
+          Not set yet — sizing can't be calculated until you enter this.
+        {% endif %}
+      </p>
+      <div class="field-row">
+        <div class="field">
+          <label for="account_value">Account value ($)</label>
+          <input type="number" step="0.01" min="0" name="account_value" id="account_value" placeholder="3000.00" required>
+        </div>
+        <div class="field">
+          <label for="buying_power">Buying power ($)</label>
+          <input type="number" step="0.01" min="0" name="buying_power" id="buying_power" placeholder="3000.00" required>
+        </div>
+      </div>
+      <button class="submit" type="submit">Save account values</button>
+    </form>
+  </section>
+
+  {% if suggestions.ran %}
+    <span class="gate-pill gate-open">market open · suggestions current as of {{ suggestions.generated_at }}</span>
+  {% elif suggestions.gate_reason %}
+    <span class="gate-pill gate-waiting">{{ suggestions.gate_reason }}</span>
+  {% else %}
+    <span class="gate-pill gate-closed">no run yet today</span>
+  {% endif %}
+
+  <section id="suggestions">
+    <h2>Today's suggestions</h2>
+    <p class="section-hint">
+      Every suggestion below is a <strong>single long option</strong> — you're buying
+      one contract, nothing else. In Webull's option chain, the strategy dropdown
+      (top left) should be set to <strong>Single Option</strong> — not Vertical, not
+      any multi-leg strategy. There is no second leg to this trade.
+    </p>
+
+    {% if suggestions.errors %}
+      <div class="errors-note">
+        {% for e in suggestions.errors %}{{ e }}<br>{% endfor %}
+      </div>
+    {% endif %}
+
+    {% if suggestions.skip_day %}
+      <p class="skip-day-note">
+        Nothing on the watchlist clears the full checklist today. Skipping is an
+        explicit, accepted outcome of this strategy — not a failure state.
+      </p>
+    {% elif not suggestions.candidates %}
+      <p class="empty-note">No suggestions generated yet. Set your account value above, then wait for the 9:45 AM ET run — or trigger it manually if you're testing locally.</p>
+    {% endif %}
+
+    {% for c in suggestions.candidates %}
+      {% if c.overall_status == "CANDIDATE" %}
+      <div class="candidate">
+        <div class="candidate-head">
+          <div class="candidate-title">
+            {{ c.symbol }}
+            <span class="type">long {{ c.option_type }} · {{ c.expiration | webull_exp }} · {{ c.dte }} DTE</span>
+          </div>
+          <span class="status-badge status-{{ c.overall_status }}">{{ c.overall_status }}</span>
+        </div>
+
+        <div class="order-ticket">
+          <span class="order-ticket-label">Single-leg order — no second leg</span>
+          <div class="order-ticket-legs">
+            <span class="leg leg-buy"><span class="leg-verb-buy">BUY</span> 1 {{ c.symbol }} {{ c.expiration | webull_exp }} ${{ c.strike }} {{ "Put" if c.option_type == "put" else "Call" }} @ ${{ "%.2f"|format(c.premium_per_share) }}</span>
+          </div>
+          <span class="order-ticket-note">In Webull's option chain, keep the strategy dropdown on <strong>Single Option</strong> (its default). This is a plain buy — there is nothing to switch to Vertical for, and no second strike to enter.</span>
+        </div>
+
+        <div class="stars">
+          {% for i in range(5) %}{% if i < c.confidence_stars %}★{% else %}<span class="empty">★</span>{% endif %}{% endfor %}
+          &nbsp;{{ c.confidence_score }}/100 — confidence is capped whenever a rule below needs manual review, on purpose.
+        </div>
+
+        <div class="metrics-row">
+          <div class="metric"><span class="label">strike</span><span class="value">${{ c.strike }}</span></div>
+          <div class="metric"><span class="label">cost per contract</span><span class="value">${{ "%.2f"|format(c.cost_per_contract) }} ({{ "%.2f"|format(c.cost_pct * 100) }}%)</span></div>
+          <div class="metric"><span class="label">max loss</span><span class="value">${{ "%.2f"|format(c.cost_per_contract) }} (100% of premium)</span></div>
+          <div class="metric"><span class="label">delta</span><span class="value">{{ "%.3f"|format(c.delta) if c.delta is not none else "—" }}</span></div>
+        </div>
+        <div class="metrics-row">
+          <div class="metric"><span class="label">profit target</span><span class="value">${{ "%.2f"|format(c.profit_target_low) }}–${{ "%.2f"|format(c.profit_target_high) }}</span></div>
+          <div class="metric"><span class="label">stop loss</span><span class="value">${{ "%.2f"|format(c.stop_loss_low) }}–${{ "%.2f"|format(c.stop_loss_high) }}</span></div>
+          <div class="metric"><span class="label">time stop</span><span class="value">flatten by {{ c.time_stop_date | webull_exp }}</span></div>
+          <div class="metric"><span class="label">spot</span><span class="value">${{ "%.2f"|format(c.spot_price) }}</span></div>
+        </div>
+
+        {% for w in c.warnings %}
+          <div class="warnings-note">{{ w }}</div>
+        {% endfor %}
+
+        <ul class="checklist">
+          {% for item in c.checklist %}
+          <li>
+            <span class="rule-status {{ item.status }}">{{ item.status.replace("_", " ") }}</span>
+            <span class="rule-text">
+              <span class="rule-name">{{ item.rule_number }}. {{ item.name }}</span>
+              <span class="rule-detail">{{ item.detail }} — [{{ item.confidence_tag }}]</span>
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </section>
+
+  <section id="log-trade">
+    <h2>Log a trade you placed</h2>
+    <p class="section-hint">Enter the premium as the <strong>total cost per contract</strong> — the same number Webull's "Total Cost" column shows, not a $/share price.</p>
+    <form class="panel" method="post" action="{{ url_for('log_trade') }}">
+      <div class="field-row">
+        <div class="field">
+          <label for="symbol">Symbol</label>
+          <input type="text" name="symbol" id="symbol" placeholder="IWM" required>
+        </div>
+        <div class="field">
+          <label for="option_type">Type</label>
+          <select name="option_type" id="option_type" required>
+            <option value="put">Put</option>
+            <option value="call">Call</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="group">Group</label>
+          <select name="group" id="group">
+            {% for g in group_choices %}
+            <option value="{{ g.value }}">{{ g.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="strike">Strike</label>
+          <input type="number" step="0.01" name="strike" id="strike" required>
+        </div>
+        <div class="field">
+          <label for="expiration">Expiration</label>
+          <input type="date" name="expiration" id="expiration" required>
+        </div>
+        <div class="field">
+          <label for="contracts">Contracts</label>
+          <input type="number" step="1" min="1" name="contracts" id="contracts" required>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="premium_paid">Total cost per contract ($)</label>
+          <input type="number" step="0.01" name="premium_paid" id="premium_paid" placeholder="126.00" required>
+        </div>
+        <div class="field">
+          <label for="notes">Notes (optional)</label>
+          <input type="text" name="notes" id="notes" placeholder="e.g. matched today's IWM suggestion">
+        </div>
+      </div>
+      <button class="submit" type="submit">Log trade</button>
+    </form>
+  </section>
+
+{% endblock %}

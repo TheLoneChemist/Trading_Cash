@@ -1,0 +1,1 @@
+-- You maintain this file by hand. Add FOMC / CPI / jobs-report dates as the Fed and BLS calendars are published. The strategy checklist (rule 6) flags any candidate whose hold window crosses one of these dates. --
