@@ -25,7 +25,7 @@ import pytz
 from src import config, storage, sizing
 from src.daily_job import run_daily_job
 from src.formatting import format_expiration_webull
-from src.market_calendar import trading_days_until
+from src.market_calendar import trading_days_until, can_run_now
 from src.weekly_review import run_weekly_review_safe, read_revisions_log
 
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +43,22 @@ def _today_str() -> str:
 def dashboard():
     suggestions = storage.get_suggestions()
     account = storage.get_account_state()
+    live_allowed, live_reason = can_run_now()
+
+    # Don't trust suggestions.ran alone to mean "current" — it's a snapshot from
+    # whenever the job last actually ran, which could be stale (e.g. a container
+    # restart after 9:45 AM skips the scheduler to tomorrow — see start_scheduler's
+    # catch-up check below, which exists specifically to prevent this). Compare the
+    # stored generated_at against today's ET date so a stale success message can't
+    # masquerade as current.
+    generated_today = False
+    if suggestions.get("generated_at"):
+        try:
+            gen_dt = datetime.fromisoformat(suggestions["generated_at"]).astimezone(pytz.timezone(config.MARKET_TZ))
+            generated_today = gen_dt.date() == datetime.now(pytz.timezone(config.MARKET_TZ)).date()
+        except ValueError:
+            pass
+
     return render_template(
         "dashboard.html",
         active_page="dashboard",
@@ -50,6 +66,9 @@ def dashboard():
         suggestions=suggestions,
         account=account,
         group_choices=config.GROUP_CHOICES,
+        live_gate_reason=live_reason,
+        live_allowed=live_allowed,
+        generated_today=generated_today,
     )
 
 
@@ -268,6 +287,17 @@ def review_run():
     return jsonify(result)
 
 
+def _todays_suggestions_already_ran() -> bool:
+    suggestions = storage.get_suggestions()
+    if not suggestions.get("ran") or not suggestions.get("generated_at"):
+        return False
+    try:
+        gen_dt = datetime.fromisoformat(suggestions["generated_at"]).astimezone(pytz.timezone(config.MARKET_TZ))
+    except ValueError:
+        return False
+    return gen_dt.date() == datetime.now(pytz.timezone(config.MARKET_TZ)).date()
+
+
 # --- Scheduler ---------------------------------------------------------------------
 # Fires every weekday morning; run_daily_job() re-validates the market-day/9:45 gate
 # itself, so a slightly-early or misfired trigger is harmless — it'll just no-op and
@@ -293,6 +323,22 @@ def start_scheduler():
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))
     logger.info("Scheduler started: daily job 9:45 AM ET Mon-Fri; weekly review Sun 6 PM ET.")
+
+    # Catch-up check: a CronTrigger computes its NEXT fire time from whenever the
+    # scheduler starts. If Railway restarts this container any time after 9:45 AM ET
+    # on a trading day (a normal deploy, a crash restart, etc.), the trigger skips
+    # straight to tomorrow — today's run would otherwise silently never happen, and
+    # the dashboard would keep showing whatever gate message was last stored from
+    # hours (or days) earlier. Run once immediately if we're past the gate and
+    # today's job hasn't already produced a result.
+    live_allowed, _ = can_run_now()
+    if live_allowed and not _todays_suggestions_already_ran():
+        logger.info("Startup catch-up: past today's 9:45 AM gate with no run recorded yet — running now.")
+        try:
+            run_daily_job()
+        except Exception:
+            logger.exception("Startup catch-up run_daily_job() failed")
+
     return scheduler
 
 

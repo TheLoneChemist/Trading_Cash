@@ -28,12 +28,12 @@
     </form>
   </section>
 
-  {% if suggestions.ran %}
+  {% if suggestions.ran and generated_today %}
     <span class="gate-pill gate-open">market open · suggestions current as of {{ suggestions.generated_at }}</span>
-  {% elif suggestions.gate_reason %}
-    <span class="gate-pill gate-waiting">{{ suggestions.gate_reason }}</span>
+  {% elif live_allowed %}
+    <span class="gate-pill gate-waiting">Market's open and past 9:45 AM ET, but today's suggestions haven't generated yet — the scheduled run may not have fired today (e.g. after a restart). Use the admin /refresh endpoint, or wait for tomorrow's run.</span>
   {% else %}
-    <span class="gate-pill gate-closed">no run yet today</span>
+    <span class="gate-pill gate-waiting">{{ live_gate_reason }}</span>
   {% endif %}
 
   <section id="suggestions">

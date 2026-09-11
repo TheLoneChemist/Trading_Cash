@@ -28,6 +28,30 @@ Newest entries at the top. Don't delete old entries — the point is the history
 
 ---
 
+## 2026-09-11 — Fixed stale gate message + scheduler skip after restart
+**Source:** user report ("the app has the wrong time") with a screenshot showing the
+dashboard displaying "It's 05:45 AM EDT — waiting until 9:45 AM ET" at 9:48 AM actual
+local time.
+**Changed:**
+- Root cause: `app.py`'s dashboard route only ever displayed the `gate_reason` string
+  stored in `data/suggestions.json` from whenever `run_daily_job()` last actually ran
+  — not a live clock. If the scheduler's daily job hadn't fired yet today (see next
+  bullet), that stale sentence would sit on the page indefinitely.
+- Actual trigger: APScheduler's `CronTrigger` computes its next fire time from
+  whenever the scheduler process starts. A Railway container restart any time after
+  9:45 AM ET on a trading day caused the trigger to skip straight to *tomorrow's*
+  9:45 AM, silently never running today at all.
+- Fix: `dashboard()` now also computes the gate status live via
+  `market_calendar.can_run_now()` on every page load, and compares the stored
+  `generated_at` against today's ET date before trusting it as "current" — a stale
+  success/waiting message can no longer masquerade as live data.
+- Fix: `start_scheduler()` now does a one-time startup catch-up check — if the app
+  starts past today's 9:45 AM gate and no run has been recorded yet today, it runs
+  `run_daily_job()` immediately instead of waiting for tomorrow.
+**Why:** the confusion wasn't a timezone math bug (`datetime.now(pytz_tz)` was
+verified correct) — it was stale cached state being displayed as if it were live,
+compounded by a scheduler gap that could leave that stale state in place all day.
+
 ## 2026-09-10 — Pivot to short-duration single-leg long options
 **Source:** `docs/handoff-addendum-short-duration-long-options.md`
 **Changed:**
