@@ -160,6 +160,8 @@ section > h2 {
   padding: 0.7rem 0.9rem;
   margin: 0.7rem 0;
 }
+.order-ticket-call { background: var(--ledger); }
+.order-ticket-put { background: #7A2E27; }
 .order-ticket-label {
   display: block;
   font-family: 'IBM Plex Mono', monospace;
@@ -169,6 +171,7 @@ section > h2 {
   color: #BFE0D6;
   margin-bottom: 0.4rem;
 }
+.order-ticket-put .order-ticket-label { color: #F2C9C3; }
 .order-ticket-legs {
   display: flex;
   flex-direction: column;
@@ -179,7 +182,7 @@ section > h2 {
 }
 .leg { color: #fff; }
 .leg-verb-sell { color: #FFB4A8; font-weight: 600; }
-.leg-verb-buy { color: #A9E0C8; font-weight: 600; }
+.leg-verb-buy { color: #fff; font-weight: 700; }
 .order-ticket-note {
   display: block;
   font-size: 0.72rem;
@@ -187,6 +190,7 @@ section > h2 {
   margin-top: 0.5rem;
   font-style: italic;
 }
+.order-ticket-put .order-ticket-note { color: #F5DAD6; }
 .order-ticket-note strong {
   color: #fff;
   font-style: normal;

@@ -31,7 +31,25 @@
   {% if suggestions.ran and generated_today %}
     <span class="gate-pill gate-open">market open · suggestions current as of {{ suggestions.generated_at }}</span>
   {% elif live_allowed %}
-    <span class="gate-pill gate-waiting">Market's open and past 9:45 AM ET, but today's suggestions haven't generated yet — the scheduled run may not have fired today (e.g. after a restart). Use the admin /refresh endpoint, or wait for tomorrow's run.</span>
+    <div class="gate-pill gate-waiting" style="display: block;">
+      Market's open and past 9:45 AM ET, but today's suggestions haven't generated
+      successfully yet.
+      {% if suggestions.generated_at and not generated_today %}
+        <br><strong>Last attempt was {{ suggestions.generated_at }}</strong> — if
+        that's not from today, the scheduled run likely hasn't fired since (e.g.
+        after a restart).
+      {% elif suggestions.generated_at and generated_today and suggestions.gate_reason %}
+        <br><strong>Today's attempt said:</strong> {{ suggestions.gate_reason }}
+        {% if not account.account_value %}
+        — this usually means the account value below is empty. If you're on
+        Railway without a persistent Volume mounted at /app/data (see
+        docs/DEPLOYMENT.md Part 5), every redeploy wipes it back to blank and
+        you'll need to re-save it each time.
+        {% endif %}
+      {% endif %}
+      <br>Use the admin <code>/refresh</code> endpoint to force a run now and see
+      the exact reason, or wait for tomorrow's run.
+    </div>
   {% else %}
     <span class="gate-pill gate-waiting">{{ live_gate_reason }}</span>
   {% endif %}
@@ -66,12 +84,12 @@
         <div class="candidate-head">
           <div class="candidate-title">
             {{ c.symbol }}
-            <span class="type">long {{ c.option_type }} · {{ c.expiration | webull_exp }} · {{ c.dte }} DTE</span>
+            <span class="type">{{ "Put" if c.option_type == "put" else "Call" }} · {{ c.expiration | webull_exp }} · {{ c.dte }} DTE</span>
           </div>
           <span class="status-badge status-{{ c.overall_status }}">{{ c.overall_status }}</span>
         </div>
 
-        <div class="order-ticket">
+        <div class="order-ticket {{ 'order-ticket-put' if c.option_type == 'put' else 'order-ticket-call' }}">
           <span class="order-ticket-label">Single-leg order — no second leg</span>
           <div class="order-ticket-legs">
             <span class="leg leg-buy"><span class="leg-verb-buy">BUY</span> 1 {{ c.symbol }} {{ c.expiration | webull_exp }} ${{ c.strike }} {{ "Put" if c.option_type == "put" else "Call" }} @ ${{ "%.2f"|format(c.premium_per_share) }}</span>

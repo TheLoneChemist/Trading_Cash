@@ -28,6 +28,25 @@ Newest entries at the top. Don't delete old entries — the point is the history
 
 ---
 
+## 2026-09-11 — Dashboard now shows the actual failure reason instead of guessing
+**Source:** user report that the "may not have fired" message persisted even in a
+fresh incognito window after the scheduler-duplication fix above.
+**Changed:**
+- The gate-status message for "market's open, but no suggestions yet" case
+  previously always guessed "the scheduled run may not have fired today" — but a run
+  can also execute successfully-as-in-completes and still not produce `ran: true`,
+  most commonly because no account value is set. On Railway without a persistent
+  Volume mounted at `/app/data` (see docs/DEPLOYMENT.md Part 5), every redeploy wipes
+  `data/account_state.json` back to blank, so a freshly-redeployed app hits this
+  every time regardless of whether the scheduler itself is healthy.
+- `dashboard()` / `dashboard.html` now surface the actual stored `gate_reason` from
+  today's attempt (if one exists) instead of a generic guess, and specifically call
+  out the missing-Volume possibility when the account value is empty.
+**Why:** the previous message actively pointed at the wrong root cause in this case,
+sending troubleshooting effort toward "is the scheduler broken again" when the real
+issue was an empty account value — expensive to debug remotely without seeing the
+actual stored reason.
+
 ## 2026-09-11 — Fixed scheduler running twice per container (duplicate billed API calls)
 **Source:** user-provided Railway deploy log, read closely after the gate-message fix
 above — the log showed the full scheduler-startup sequence appearing twice in one
