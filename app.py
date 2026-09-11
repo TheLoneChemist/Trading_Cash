@@ -343,8 +343,16 @@ def start_scheduler():
 
 
 if __name__ == "__main__":
+    # Local `python app.py` dev usage — not going through gunicorn, so start here directly.
     start_scheduler()
     app.run(host="0.0.0.0", port=config.PORT)
-else:
-    # When run under gunicorn (production), still start the scheduler once.
-    start_scheduler()
+
+# NOTE: there is deliberately no `else: start_scheduler()` here anymore. Under gunicorn,
+# this module gets imported more than once in different process contexts (the master
+# process resolving `app:app`, and separately each worker process after forking) — a
+# module-level side effect here is NOT guaranteed to run exactly once, and in practice
+# it ran twice (once before gunicorn's own "Starting gunicorn" banner even printed, once
+# after the worker booted), creating two independent live schedulers. That meant every
+# recurring job — including the weekly review's real, billed Anthropic API call — was
+# firing twice. See gunicorn.conf.py's post_fork hook for the actual single-execution
+# fix, and docs/REVISIONS.md for the full incident writeup.

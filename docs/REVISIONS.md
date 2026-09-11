@@ -28,6 +28,33 @@ Newest entries at the top. Don't delete old entries — the point is the history
 
 ---
 
+## 2026-09-11 — Fixed scheduler running twice per container (duplicate billed API calls)
+**Source:** user-provided Railway deploy log, read closely after the gate-message fix
+above — the log showed the full scheduler-startup sequence appearing twice in one
+container boot, once before gunicorn's own "Starting gunicorn" banner even printed.
+**Changed:**
+- Root cause: `app.py` started the scheduler via a module-level `else: start_scheduler()`
+  side effect, which runs whenever the module is imported outside `__main__`. Under
+  gunicorn this module gets imported in more than one process context (gunicorn's
+  master process resolving `app:app`, and separately each worker process after
+  forking) — both imports ran the side effect, producing two independent live
+  `BackgroundScheduler` instances in the same container.
+- Impact: every recurring job fired twice — including the weekly review's real,
+  billed Anthropic API call, and the daily Tradier chain pulls. This had been true
+  since the weekly-review feature was added; no way to retroactively know how many
+  extra Anthropic calls were made without checking usage on console.anthropic.com.
+- Fix: removed the module-level `else:` side effect entirely. Added
+  `gunicorn.conf.py` with a `post_fork` server hook, which gunicorn guarantees runs
+  exactly once per actual worker process and never in the master. Updated the
+  `Procfile` to pass `--config gunicorn.conf.py`.
+- Verified by actually running gunicorn locally (not just reasoning about it) and
+  confirming "Startup catch-up" — the unambiguous single-execution marker — now
+  appears exactly once per boot, in the correct order after gunicorn's own banner.
+**Why:** a duplicated scheduled job is a silent, recurring cost — worth catching
+immediately rather than letting it compound weekly. Recommend checking
+console.anthropic.com's usage page for any doubled charges since the review feature
+was deployed.
+
 ## 2026-09-11 — Fixed stale gate message + scheduler skip after restart
 **Source:** user report ("the app has the wrong time") with a screenshot showing the
 dashboard displaying "It's 05:45 AM EDT — waiting until 9:45 AM ET" at 9:48 AM actual
