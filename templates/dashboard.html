@@ -63,6 +63,39 @@
       any multi-leg strategy. There is no second leg to this trade.
     </p>
 
+    {% set candidate_count = suggestions.candidates | selectattr("overall_status", "equalto", "CANDIDATE") | list | length %}
+    {% if candidate_count > 0 %}
+    <table class="history summary-table">
+      <thead>
+        <tr>
+          <th>Symbol</th><th>Type</th><th>DTE</th><th>Strike</th>
+          <th>Cost/contract</th><th>Delta</th><th></th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in suggestions.candidates %}
+          {% if c.overall_status == "CANDIDATE" %}
+          <tr>
+            <td>{{ c.symbol }}</td>
+            <td><span class="type-pill type-pill-{{ c.option_type }}">{{ "Put" if c.option_type == "put" else "Call" }}</span></td>
+            <td>{{ c.dte }}</td>
+            <td>${{ c.strike }}</td>
+            <td>${{ "%.2f"|format(c.cost_per_contract) }}</td>
+            <td>{{ "%.3f"|format(c.delta) if c.delta is not none else "—" }}</td>
+            <td><a href="#candidate-{{ loop.index }}" class="chip">View ↓</a></td>
+            <td>
+              <button type="button" class="chip chip-fill"
+                onclick="fillTradeLog('{{ c.symbol }}','{{ c.option_type }}','{{ c.strike }}','{{ c.expiration }}','{{ c.group }}')">
+                Log this
+              </button>
+            </td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
     {% if suggestions.errors %}
       <div class="errors-note">
         {% for e in suggestions.errors %}{{ e }}<br>{% endfor %}
@@ -80,7 +113,7 @@
 
     {% for c in suggestions.candidates %}
       {% if c.overall_status == "CANDIDATE" %}
-      <div class="candidate">
+      <div class="candidate" id="candidate-{{ loop.index }}">
         <div class="candidate-head">
           <div class="candidate-title">
             {{ c.symbol }}
@@ -88,6 +121,11 @@
           </div>
           <span class="status-badge status-{{ c.overall_status }}">{{ c.overall_status }}</span>
         </div>
+
+        <button type="button" class="chip chip-fill" style="margin-bottom: 0.6rem;"
+          onclick="fillTradeLog('{{ c.symbol }}','{{ c.option_type }}','{{ c.strike }}','{{ c.expiration }}','{{ c.group }}')">
+          Log this trade
+        </button>
 
         <div class="order-ticket {{ 'order-ticket-put' if c.option_type == 'put' else 'order-ticket-call' }}">
           <span class="order-ticket-label">Single-leg order — no second leg</span>
@@ -138,7 +176,7 @@
   <section id="log-trade">
     <h2>Log a trade you placed</h2>
     <p class="section-hint">Enter the premium as the <strong>total cost per contract</strong> — the same number Webull's "Total Cost" column shows, not a $/share price.</p>
-    <form class="panel" method="post" action="{{ url_for('log_trade') }}">
+    <form class="panel" method="post" action="{{ url_for('log_trade') }}" id="log-trade-form">
       <div class="field-row">
         <div class="field">
           <label for="symbol">Symbol</label>
@@ -187,5 +225,25 @@
       <button class="submit" type="submit">Log trade</button>
     </form>
   </section>
+
+  <script>
+    function fillTradeLog(symbol, optionType, strike, expiration, group) {
+      document.getElementById('symbol').value = symbol;
+      document.getElementById('option_type').value = optionType;
+      document.getElementById('strike').value = strike;
+      document.getElementById('expiration').value = expiration;
+      document.getElementById('group').value = group;
+      // Deliberately left blank — these depend on your actual fill, not the suggestion.
+      document.getElementById('premium_paid').value = '';
+      document.getElementById('contracts').value = '';
+
+      var form = document.getElementById('log-trade-form');
+      form.classList.add('form-just-filled');
+      setTimeout(function () { form.classList.remove('form-just-filled'); }, 1200);
+
+      document.getElementById('log-trade').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('premium_paid').focus();
+    }
+  </script>
 
 {% endblock %}
