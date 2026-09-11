@@ -28,6 +28,30 @@ Newest entries at the top. Don't delete old entries — the point is the history
 
 ---
 
+## 2026-09-11 — Trade log now supports scaling out, editing, and price-based closing
+**Source:** user request in chat
+**Changed:**
+- Replaced the profit/loss-dropdown close form with a direct "contracts to close" +
+  "price per contract at close" form — realized P&L is now computed from the actual
+  numbers instead of asked as a manual judgment call.
+- Trades now support multiple partial closes (scaling out): `src/storage.py`'s
+  `add_close()` records each sell-to-close event separately; a trade stays "open"
+  until all originally-bought contracts are accounted for. Over-closing (trying to
+  close more than remain) is rejected with an explicit error rather than silently
+  clamped.
+- Added `edit_close()` and `delete_close()` to correct a wrong close entry, and
+  `update_trade_fields()` to correct a trade's core fields (symbol, strike,
+  expiration, contracts, premium paid, etc.) after the fact — covers "I saved the
+  wrong info" for both what you bought and what you sold.
+- `update_trade_fields()` rejects lowering `contracts` below what's already recorded
+  as closed, rather than producing a negative remaining count.
+- History page: open positions show "remaining / original" contracts plus a
+  sub-listing of closes so far; closed positions show every close event and the net
+  realized P&L, colored green/red.
+**Why:** the previous single-shot "closed — profit/loss" model couldn't represent a
+real position scaled out over multiple sells at different prices, and had no
+correction path if a number was mis-entered.
+
 ## 2026-09-11 — Dashboard now shows the actual failure reason instead of guessing
 **Source:** user report that the "may not have fired" message persisted even in a
 fresh incognito window after the scheduler-duplication fix above.

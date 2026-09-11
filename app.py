@@ -104,6 +104,7 @@ def history():
         today_str=_today_str(),
         open_trades=open_trades,
         closed_trades=closed_trades,
+        group_choices=config.GROUP_CHOICES,
     )
 
 
@@ -205,17 +206,70 @@ def log_trade():
 
 @app.route("/close-trade", methods=["POST"])
 def close_trade():
+    """Records a partial or full sell-to-close (scaling out is supported — call this multiple times)."""
     try:
         trade_id = int(request.form["trade_id"])
+        contracts = int(request.form["contracts_closed"])
+        price_per_contract = float(request.form["price_per_contract"])
     except (KeyError, ValueError):
-        return "Invalid trade id.", 400
-    status = request.form.get("status", "closed_profit")
-    closed_price = request.form.get("closed_price")
-    closed_price = float(closed_price) if closed_price else None
-    ok = storage.update_trade_status(trade_id, status, closed_price)
+        return "Invalid trade id, contracts, or price.", 400
+    ok, error = storage.add_close(trade_id, contracts, price_per_contract)
     if not ok:
-        return "Trade not found.", 404
-    return redirect(url_for("dashboard"))
+        return error, 400
+    return redirect(url_for("history"))
+
+
+@app.route("/edit-close", methods=["POST"])
+def edit_close():
+    try:
+        trade_id = int(request.form["trade_id"])
+        close_id = int(request.form["close_id"])
+        contracts = int(request.form["contracts_closed"])
+        price_per_contract = float(request.form["price_per_contract"])
+    except (KeyError, ValueError):
+        return "Invalid trade id, close id, contracts, or price.", 400
+    ok, error = storage.edit_close(trade_id, close_id, contracts, price_per_contract)
+    if not ok:
+        return error, 400
+    return redirect(url_for("history"))
+
+
+@app.route("/delete-close", methods=["POST"])
+def delete_close():
+    try:
+        trade_id = int(request.form["trade_id"])
+        close_id = int(request.form["close_id"])
+    except (KeyError, ValueError):
+        return "Invalid trade id or close id.", 400
+    storage.delete_close(trade_id, close_id)
+    return redirect(url_for("history"))
+
+
+@app.route("/edit-trade", methods=["POST"])
+def edit_trade():
+    """
+    Corrects a trade's core fields after the fact ("I saved the wrong info") —
+    symbol, type, strike, expiration, group, original contracts, premium paid, notes.
+    To fix a wrong CLOSE price/quantity instead, use /edit-close.
+    """
+    try:
+        trade_id = int(request.form["trade_id"])
+        updates = {
+            "symbol": request.form["symbol"].upper().strip(),
+            "option_type": request.form["option_type"],
+            "strike": float(request.form["strike"]),
+            "expiration": request.form["expiration"],
+            "group": request.form.get("group", ""),
+            "contracts": int(request.form["contracts"]),
+            "premium_paid": float(request.form["premium_paid"]),
+            "notes": request.form.get("notes", ""),
+        }
+    except (KeyError, ValueError):
+        return "Missing or invalid field.", 400
+    ok, error = storage.update_trade_fields(trade_id, updates)
+    if not ok:
+        return error, 400
+    return redirect(url_for("history"))
 
 
 @app.route("/refresh", methods=["POST"])

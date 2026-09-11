@@ -1,11 +1,94 @@
 {% extends "base.html" %}
+
+{% macro edit_trade_form(t, group_choices) %}
+<details class="edit-details">
+  <summary class="edit-summary">Edit trade</summary>
+  <form method="post" action="{{ url_for('edit_trade') }}" class="edit-trade-form">
+    <input type="hidden" name="trade_id" value="{{ t.id }}">
+    <div class="field-row">
+      <div class="field">
+        <label>Symbol</label>
+        <input type="text" name="symbol" value="{{ t.symbol }}" required>
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <select name="option_type" required>
+          <option value="put" {{ "selected" if t.option_type == "put" }}>Put</option>
+          <option value="call" {{ "selected" if t.option_type == "call" }}>Call</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Group</label>
+        <select name="group">
+          {% for g in group_choices %}
+          <option value="{{ g.value }}" {{ "selected" if g.value == t.group }}>{{ g.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Strike</label>
+        <input type="number" step="0.01" name="strike" value="{{ t.strike }}" required>
+      </div>
+      <div class="field">
+        <label>Expiration</label>
+        <input type="date" name="expiration" value="{{ t.expiration }}" required>
+      </div>
+      <div class="field">
+        <label>Contracts (original total)</label>
+        <input type="number" step="1" min="1" name="contracts" value="{{ t.contracts }}" required>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Total cost per contract ($)</label>
+        <input type="number" step="0.01" name="premium_paid" value="{{ t.premium_paid }}" required>
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <input type="text" name="notes" value="{{ t.notes or '' }}">
+      </div>
+    </div>
+    <button class="submit" type="submit">Save changes</button>
+  </form>
+</details>
+{% endmacro %}
+
+{% macro closes_list(t) %}
+{% if t.closes %}
+<ul class="closes-list">
+  {% for cl in t.closes %}
+  <li>
+    {{ cl.contracts }} @ ${{ "%.2f"|format(cl.price_per_contract) }} on {{ cl.closed_at[:10] }}
+    <details class="edit-details" style="margin-left: 0.5rem;">
+      <summary class="edit-summary">Edit</summary>
+      <form method="post" action="{{ url_for('edit_close') }}" class="inline-edit-form">
+        <input type="hidden" name="trade_id" value="{{ t.id }}">
+        <input type="hidden" name="close_id" value="{{ cl.id }}">
+        <input type="number" step="1" min="1" name="contracts_closed" value="{{ cl.contracts }}" style="width:60px;" required>
+        <input type="number" step="0.01" name="price_per_contract" value="{{ cl.price_per_contract }}" style="width:80px;" required>
+        <button class="submit" type="submit">Save</button>
+      </form>
+    </details>
+    <form method="post" action="{{ url_for('delete_close') }}" style="display:inline; margin-left: 0.3rem;">
+      <input type="hidden" name="trade_id" value="{{ t.id }}">
+      <input type="hidden" name="close_id" value="{{ cl.id }}">
+      <button class="chip" type="submit" style="padding: 0.1rem 0.5rem; font-size: 0.66rem;">Remove</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 
   <section id="history">
     <h2>Performance history</h2>
 
     <h3 class="subhead">Open positions</h3>
-    <p class="section-hint">Current value refreshes once a day, batched into the 9:45 AM ET run — not on every page load.</p>
+    <p class="section-hint">Current value refreshes once a day, batched into the 9:45 AM ET run — not on every page load. Closing supports scaling out: close however many contracts you actually sold, and repeat for the rest later.</p>
     {% if open_trades %}
     <table class="history">
       <thead>
@@ -44,19 +127,25 @@
               <span class="empty-note">not fetched yet</span>
             {% endif %}
           </td>
-          <td>{{ t.contracts }}</td>
+          <td>{{ t.contracts_remaining }} / {{ t.contracts }}</td>
           <td>
-            <form method="post" action="{{ url_for('close_trade') }}" style="display:flex; gap:4px;">
+            <form method="post" action="{{ url_for('close_trade') }}" class="inline-edit-form">
               <input type="hidden" name="trade_id" value="{{ t.id }}">
-              <select name="status" style="font-size:0.7rem;">
-                <option value="closed_profit">Closed — profit</option>
-                <option value="closed_loss">Closed — loss</option>
-              </select>
-              <input type="number" step="0.01" name="closed_price" placeholder="close $" style="width:70px; font-size:0.7rem;">
-              <button class="submit" type="submit" style="padding:0.2rem 0.5rem; font-size:0.7rem;">Save</button>
+              <input type="number" step="1" min="1" max="{{ t.contracts_remaining }}" name="contracts_closed" placeholder="qty" style="width:55px;" required>
+              <input type="number" step="0.01" name="price_per_contract" placeholder="price/contract $" style="width:100px;" required>
+              <button class="submit" type="submit" style="padding:0.2rem 0.5rem; font-size:0.7rem;">Close</button>
             </form>
+            {{ edit_trade_form(t, group_choices) }}
           </td>
         </tr>
+        {% if t.closes %}
+        <tr>
+          <td colspan="9" style="background: var(--paper);">
+            <span class="section-hint" style="margin: 0;">Closed so far:</span>
+            {{ closes_list(t) }}
+          </td>
+        </tr>
+        {% endif %}
         {% endfor %}
       </tbody>
     </table>
@@ -70,11 +159,15 @@
       <thead>
         <tr>
           <th>Symbol</th><th>Type</th><th>Strike</th><th>Exp</th>
-          <th>Cost/contract</th><th>Contracts</th><th>Result</th><th>Closed at</th>
+          <th>Cost/contract</th><th>Contracts</th><th>Closes</th><th>Result</th><th></th>
         </tr>
       </thead>
       <tbody>
         {% for t in closed_trades %}
+        {% set total_cost = t.premium_paid * t.contracts %}
+        {% set proceeds = namespace(value=0) %}
+        {% for cl in t.closes %}{% set proceeds.value = proceeds.value + (cl.contracts * cl.price_per_contract) %}{% endfor %}
+        {% set net_pnl = proceeds.value - total_cost %}
         <tr>
           <td>{{ t.symbol }}</td>
           <td>{{ "Put" if t.option_type == "put" else "Call" }}</td>
@@ -82,8 +175,9 @@
           <td>{{ t.expiration | webull_exp }}</td>
           <td>${{ "%.2f"|format(t.premium_paid) }}</td>
           <td>{{ t.contracts }}</td>
-          <td><span class="pill pill-{{ t.status }}">{{ t.status.replace("_"," ") }}{% if t.get('closed_price') is not none %} · ${{ "%.2f"|format(t.closed_price) }}{% endif %}</span></td>
-          <td>{{ t.closed_at[:10] if t.closed_at else "—" }}</td>
+          <td>{{ closes_list(t) }}</td>
+          <td><span class="pill pill-{{ 'closed_profit' if net_pnl >= 0 else 'closed_loss' }}">{{ "+" if net_pnl >= 0 }}${{ "%.2f"|format(net_pnl) }}</span></td>
+          <td>{{ edit_trade_form(t, group_choices) }}</td>
         </tr>
         {% endfor %}
       </tbody>

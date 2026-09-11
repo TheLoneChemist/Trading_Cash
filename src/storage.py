@@ -58,31 +58,127 @@ def set_account_state(account_value: float, buying_power: float) -> dict:
 
 
 # --- Trade log ---------------------------------------------------------------------
+# Trades support PARTIAL closes (scaling out): `contracts` is always the ORIGINAL
+# total bought, and `closes` is a list of individual sell-to-close events, each
+# {"id", "contracts", "price_per_contract", "closed_at"}. "status" and
+# "contracts_remaining" are derived, not authoritative — _recompute_status() is the
+# single place that keeps them in sync, called after every add/edit/delete.
 def get_trade_log() -> list[dict]:
     return _read("trade_log.json", [])
+
+
+def _contracts_closed(trade: dict) -> int:
+    return sum(c.get("contracts", 0) for c in trade.get("closes", []))
+
+
+def _recompute_status(trade: dict) -> None:
+    remaining = trade.get("contracts", 0) - _contracts_closed(trade)
+    trade["contracts_remaining"] = remaining
+    trade["status"] = "open" if remaining > 0 else "closed"
+    closes = trade.get("closes", [])
+    trade["closed_at"] = closes[-1]["closed_at"] if remaining <= 0 and closes else None
 
 
 def add_trade(trade: dict) -> dict:
     trades = get_trade_log()
     trade["id"] = (max((t.get("id", 0) for t in trades), default=0)) + 1
     trade["logged_at"] = datetime.now(timezone.utc).isoformat()
-    trade.setdefault("status", "open")
+    trade.setdefault("closes", [])
+    _recompute_status(trade)
     trades.append(trade)
     _write("trade_log.json", trades)
     return trade
 
 
-def update_trade_status(trade_id: int, status: str, closed_credit_debit: float = None) -> bool:
+def add_close(trade_id: int, contracts: int, price_per_contract: float) -> tuple[bool, str]:
+    """
+    Records a partial (or full) sell-to-close. Returns (ok, error_message) — error
+    covers trying to close more contracts than actually remain open, which the
+    caller should show back to the user rather than silently clamping (clamping a
+    typo'd quantity could hide a mistake instead of catching it).
+    """
     trades = get_trade_log()
     for t in trades:
         if t.get("id") == trade_id:
-            t["status"] = status
-            if closed_credit_debit is not None:
-                t["closed_price"] = closed_credit_debit
-            t["closed_at"] = datetime.now(timezone.utc).isoformat() if status != "open" else None
+            remaining = t.get("contracts", 0) - _contracts_closed(t)
+            if contracts <= 0:
+                return False, "Contracts to close must be at least 1."
+            if contracts > remaining:
+                return False, f"Only {remaining} contract(s) remain open on this trade."
+            closes = t.setdefault("closes", [])
+            close_id = (max((c.get("id", 0) for c in closes), default=0)) + 1
+            closes.append({
+                "id": close_id,
+                "contracts": contracts,
+                "price_per_contract": price_per_contract,
+                "closed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            _recompute_status(t)
+            _write("trade_log.json", trades)
+            return True, ""
+    return False, "Trade not found."
+
+
+def edit_close(trade_id: int, close_id: int, contracts: int, price_per_contract: float) -> tuple[bool, str]:
+    """Corrects a previously-logged close (wrong price or quantity entered)."""
+    trades = get_trade_log()
+    for t in trades:
+        if t.get("id") == trade_id:
+            closes = t.get("closes", [])
+            target = next((c for c in closes if c.get("id") == close_id), None)
+            if target is None:
+                return False, "Close entry not found."
+            other_closed = sum(c.get("contracts", 0) for c in closes if c.get("id") != close_id)
+            if contracts <= 0:
+                return False, "Contracts to close must be at least 1."
+            if other_closed + contracts > t.get("contracts", 0):
+                return False, f"That would close more than the {t.get('contracts')} contracts originally bought."
+            target["contracts"] = contracts
+            target["price_per_contract"] = price_per_contract
+            _recompute_status(t)
+            _write("trade_log.json", trades)
+            return True, ""
+    return False, "Trade not found."
+
+
+def delete_close(trade_id: int, close_id: int) -> bool:
+    trades = get_trade_log()
+    for t in trades:
+        if t.get("id") == trade_id:
+            closes = t.get("closes", [])
+            new_closes = [c for c in closes if c.get("id") != close_id]
+            if len(new_closes) == len(closes):
+                return False  # nothing removed
+            t["closes"] = new_closes
+            _recompute_status(t)
             _write("trade_log.json", trades)
             return True
     return False
+
+
+def update_trade_fields(trade_id: int, updates: dict) -> tuple[bool, str]:
+    """
+    General editor for a trade's core fields (symbol, option_type, strike,
+    expiration, group, contracts, premium_paid, notes) — covers "I saved the wrong
+    info" for anything that isn't a close event itself. Rejects lowering `contracts`
+    below what's already been recorded as closed, rather than silently producing a
+    negative contracts_remaining.
+    """
+    allowed = {"symbol", "option_type", "strike", "expiration", "group", "contracts", "premium_paid", "notes"}
+    trades = get_trade_log()
+    for t in trades:
+        if t.get("id") == trade_id:
+            if "contracts" in updates:
+                new_total = updates["contracts"]
+                if new_total < _contracts_closed(t):
+                    return False, f"Can't set contracts below the {_contracts_closed(t)} already recorded as closed."
+            for k, v in updates.items():
+                if k in allowed:
+                    t[k] = v
+            _recompute_status(t)
+            _write("trade_log.json", trades)
+            return True, ""
+    return False, "Trade not found."
 
 
 def update_trade_current_value(trade_id: int, current_value: float, fetched_at: str) -> bool:
