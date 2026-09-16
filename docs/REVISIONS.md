@@ -28,6 +28,29 @@ Newest entries at the top. Don't delete old entries — the point is the history
 
 ---
 
+## 2026-09-15 — Diagnosed unreliable in-app scheduler; added Railway Cron backup
+**Source:** user report of the same "05:45 AM EDT — waiting" message persisting
+unchanged from Sept 11 through Sept 15, confirmed via Railway's Metrics tab showing
+completely flat CPU and network activity for a full trading day (Sept 14, a Monday)
+with no blip at 9:45 AM — the daily job's Tradier calls never happened that day.
+**Changed:**
+- No application code changed. This was diagnosed as the in-process APScheduler
+  background thread not reliably surviving to 9:45 AM ET inside Railway's web
+  service, for reasons not fully root-caused (possibly related to how the platform
+  manages the container, not something visible from inside the app itself).
+- `docs/DEPLOYMENT.md` Part 9 now recommends adding a Railway Cron Job that calls the
+  existing `/refresh` route directly (reusing the app's own timezone-aware gate logic)
+  as an independent, platform-native trigger — scheduled twice daily at both possible
+  UTC offsets (13:50 and 14:50 UTC) so DST transitions never need manual updating; the
+  app's own gate harmlessly no-ops on whichever call falls outside market hours. Same
+  pattern recommended for the weekly review's `/review/run`.
+- The in-app scheduler is kept running as free redundancy, just no longer trusted as
+  the sole trigger.
+**Why:** if the weekly review sees gaps in `suggestion_history.json` (missing trading
+days with no entry at all, as opposed to a `skip_day` entry), this is the likely
+explanation — a scheduling reliability gap, not a strategy or checklist problem. Don't
+mistake missing history for "nothing qualified that day."
+
 ## 2026-09-11 — Trade log now supports scaling out, editing, and price-based closing
 **Source:** user request in chat
 **Changed:**

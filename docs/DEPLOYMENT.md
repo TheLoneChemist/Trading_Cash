@@ -115,23 +115,35 @@ bypasses the market/time gate and exists only so you can test the strategy logic
 locally without waiting for 9:45 AM. Using it in production defeats the whole point of
 the gate.
 
-### Alternative: Railway Cron Job service instead of the in-app scheduler
+### Alternative / backup: Railway Cron Job hitting /refresh (recommended)
 
-If you'd rather not have a scheduler running inside your always-on web process (e.g.
-you want to scale to multiple web instances later, which would otherwise cause the job
-to fire multiple times), you can disable the APScheduler block in `app.py` and instead:
+The evidence from your Metrics tab (flat CPU/network for a full trading day, no
+9:45 AM activity) points at the in-app scheduler not reliably surviving long enough
+to fire — whatever mechanism Railway uses to manage this service isn't guaranteeing
+the background thread stays alive through market hours. Rather than debug that
+further, add an independent, platform-native trigger:
 
 1. In Railway, **New → Cron Job** (a separate lightweight service in the same project).
-2. Command: `python scripts/run_daily.py`
-3. Schedule: `45 13 * * 1-5` (this is UTC — 13:45 UTC = 9:45 AM ET during EDT; you'll
-   need `44 14 * * 1-5` during EST months, or just leave the in-app scheduler running,
-   which already handles the ET/UTC daylight-saving switch for you via `pytz`).
-4. Make sure this Cron Job service has the same `TRADIER_API_KEY` / `TRADIER_ENV`
-   variables and the same mounted Volume as the web service (Railway lets services
-   within a project share a Volume).
+2. Command:
+   ```bash
+   curl -X POST https://YOUR-APP.up.railway.app/refresh -H "X-Admin-Secret: YOUR_ADMIN_SECRET"
+   ```
+   This calls your *existing* `/refresh` route — reusing the same timezone-aware gate
+   logic already in `market_calendar.py`, rather than duplicating it in a second
+   codebase-aware script.
+3. Schedule it to fire **twice**, bracketing both possible UTC offsets across the
+   year, so you never have to remember to update it for daylight saving:
+   - `50 13 * * 1-5` (13:50 UTC = 9:50 AM **EDT**, summer)
+   - `50 14 * * 1-5` (14:50 UTC = 9:50 AM **EST**, winter)
 
-For a first version, the in-app scheduler (Part 7's default) is simpler and handles
-daylight saving automatically — only switch to this if you have a specific reason to.
+   Whichever one lands outside market hours for the current season is harmless —
+   your app's own `can_run_now()` gate will just no-op on that call, exactly as
+   designed. You get guaranteed daily coverage without DST bookkeeping.
+4. Keep the in-app scheduler running too (it's free redundancy) — just don't rely on
+   it alone anymore.
+
+This doesn't touch any application code, so there's nothing to redeploy for this fix
+— it's purely a Railway configuration addition.
 
 ## Part 8 — Daily use
 
@@ -157,6 +169,14 @@ Once `ANTHROPIC_API_KEY` is set (Part 4), the app runs a review every Sunday eve
    gap between what was suggested and what you actually executed.
 4. Saves the result to `data/weekly_reviews.json` and shows it on the **Review** tab,
    ending with a ready-to-copy prompt for a **new** Claude chat.
+
+**This has the same in-process-scheduler reliability risk as the daily job** (see
+Part 9's Cron Job recommendation above) — if you set up the Railway Cron Job backup
+for `/refresh`, add a second one for this too:
+```bash
+curl -X POST https://YOUR-APP.up.railway.app/review/run -H "X-Admin-Secret: YOUR_ADMIN_SECRET"
+```
+Scheduled for Sunday evening, same dual-UTC-offset pattern to sidestep DST.
 
 **This costs real money per run** — unlike Tradier's free sandbox, `api.anthropic.com`
 bills per token. At the summary sizes this produces (a few KB of JSON), a weekly run
