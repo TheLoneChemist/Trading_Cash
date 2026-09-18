@@ -28,6 +28,27 @@ Newest entries at the top. Don't delete old entries — the point is the history
 
 ---
 
+## 2026-09-18 — Fixed ambiguous close-price label causing a unit-mismatch bug
+**Source:** user report of a P&L calculation that "looked wrong" — a $140 cost trade
+closed for a claimed $138.34 loss on a $1.66 entry.
+**Changed:**
+- Root cause: the close-trade form's price field was labeled only "price/contract $"
+  with no unit clarification, unlike the log-trade form's "Total cost per contract"
+  field which explicitly warns it's not a $/share price. The user (reasonably) entered
+  $1.66 — a per-share quote price, as Webull's "Last Price" column would show — where
+  the form actually expected the per-contract total ($166.00). The underlying
+  subtraction (`proceeds - cost`) was correct; the input itself was in the wrong unit.
+- Fixed both the close form and the edit-close form in `templates/history.html` to
+  explicitly say "Total $ per contract at close (not $/share)," matching the existing
+  convention on the log-trade form.
+- This was a labeling/UI fix only — no changes to `storage.py`'s close/edit-close
+  logic, which was already computing correctly from whatever number it was given.
+**Why:** this is the third or fourth time in this project a per-share vs. per-contract
+mismatch has caused a real, wrong-looking number (see the original credit-spread
+confusion and the SPY $825 single-option incident earlier in the history). Worth
+treating as a pattern: any dollar input field in this app should say explicitly which
+convention it expects, not just "$".
+
 ## 2026-09-15 — Diagnosed unreliable in-app scheduler; added Railway Cron backup
 **Source:** user report of the same "05:45 AM EDT — waiting" message persisting
 unchanged from Sept 11 through Sept 15, confirmed via Railway's Metrics tab showing

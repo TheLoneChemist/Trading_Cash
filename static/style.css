@@ -125,6 +125,26 @@ nav.tabs .tab.active {
 }
 .inline-edit-form button { padding: 0.25rem 0.6rem; font-size: 0.72rem; }
 
+.close-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+.close-form-label {
+  font-size: 0.66rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.close-form input {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
+
 section { margin-bottom: 2.75rem; }
 
 section > h2 {
